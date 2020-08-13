@@ -1,75 +1,75 @@
-library(shiny)
-library(ggplot2)
-library(plyr)
-library(dplyr)
-library(lubridate)
-
-data <- read.csv("data.csv")
-
-data$index <- 1:nrow(data)
-data
-
-data$Rn = as.integer(data$Media.Spend)
-data
-
-ui <- fluidPage(
-  titlePanel("Campaign Search Volumes"),
+  library(shiny)
+  library(ggplot2)
+  library(plyr)
+  library(dplyr)
+  library(lubridate)
+  library(dplyr)
   
-  sidebarLayout(
-    sidebarPanel(
-      selectInput(inputId = "MediaCampaign",label = "Media Campaign", choices =  c(data$MediaCampaign), selected = "data$MediaCampaign", multiple = F),
-      sliderInput(inputId = "RetentionFactor", label = "Retention Factor ", min = 1,max = 10, value= 1,step = 0.1),),
+  data <- read.csv("data.csv")
+  
+  data$index <- 1:nrow(data)
+  data
+  
+  ui <- fluidPage(
+    titlePanel("Campaign Search Volumes"),
     
-    mainPanel(
-      plotOutput(outputId = "distPlot"),
-      tableOutput("TbEfficiencies"),
+    sidebarLayout(
+      sidebarPanel(
+        selectInput(inputId = "MediaCampaign",label = "Media Campaign", choices =  c(data$MediaCampaign), selected = "data$MediaCampaign", multiple = F),
+        sliderInput(inputId = "RetentionFactor", label = "Retention Factor ", min = 0,max = 1, value= 0.1,step = 0.1),),
+      
+      mainPanel(
+        plotOutput(outputId = "Plot"),
+        tableOutput("TbEfficiencies"),
+      )
     )
   )
-)
-
-server <- function(input, output) {
   
-  selectedData <- reactive({
-    data %>% filter(data$MediaCampaign==input$MediaCampaign)
-  })
-  
-  
-  output$distPlot <- renderPlot({
-    for (i in 1:nrow(data))
-    {
-      j <- lag(i, n = 1L, default = NA, order_by = NULL)
-      PrvWeekMediaSpend <- data[j,2]
+  server <- function(input, output) {
+    
+    GetRFInput <- function(){
+      return(IPRF <- input$RetentionFactor)
     }
     
-    ###Adstock (in week n) = Media Spend (in week n) + [ RF x Adstock (in week n-1) ]
-    #RF <- input$RetentionFactor * data()$PrvAd
-    #cbind(data, RF)
-    #Adstock <- data()$Media.Spend + data()$RF
+      selectedData <- reactive({
+      data %>% filter(data$MediaCampaign==input$MediaCampaign)
+    })
     
-    RF = selectedData()$Media.Spend + (input$RetentionFactor * selectedData()$Media.Spend)
-    plot(x=selectedData()$index,y=RF, xlab="Week",ylab="Adstock", type="h")
-  })
-  
-  Values <- reactive({
+    myAdstock <- 0.0;
+    AdstockIterative <- function(MSpend,RF,Week)
+    {
+      myAdstock <- MSpend + RF * myAdstock
+      return(myAdstock)
+    }
     
-    data.frame(
-      Name = c("Highest Search Volume",
-               "Lowest Search Volume",
-               "Average Search Volume"),
-      Value = as.character(c(paste(max(selectedData()$Media.Spend)),
-                             paste(min(selectedData()$Media.Spend)),
-                             paste(mean(selectedData()$Media.Spend))
-      )),
+    AdstockRecursive  <- function(MSpend,RF,week)
+    {
+      #return(MSpend + (RF * AdstockIterative(MSpend,RF, week-1)))
+      return(MSpend + (RF * lag(AdstockIterative(MSpend,RF, week))))
+    }  
+    
+    output$Plot <- renderPlot({
+      Adstock = AdstockRecursive(selectedData()$Media.Spend,input$RetentionFactor,selectedData()$index)
+      plot(x=selectedData()$weekID,y=Adstock, xlab="Week Number for Campaign",ylab="Adstock", type="h")
+    })
+    
+    Values <- reactive({
+      data.frame(
+        Name = c("Highest Search Volume",
+                 "Lowest Search Volume",
+                 "Average Search Volume"),
+        Value = as.character(c(paste(max(selectedData()$Media.Spend)),
+                               paste(min(selectedData()$Media.Spend)),
+                               paste(mean(selectedData()$Media.Spend))
+        )),
+        
+        stringsAsFactors = FALSE)
       
-      stringsAsFactors = FALSE)
+    })
     
-  })
+    output$TbEfficiencies <- renderTable({
+      Values()
+    })    
+  }
   
-  output$TbEfficiencies <- renderTable({
-    Values()
-  })    
-  
-}
-
-
-shinyApp(ui = ui, server = server)
+  shinyApp(ui = ui, server = server)
